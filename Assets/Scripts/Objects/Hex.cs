@@ -1,7 +1,6 @@
-using System;
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
+using Random = UnityEngine.Random;
 
 public class Hex : MonoBehaviour
 {
@@ -18,24 +17,16 @@ public class Hex : MonoBehaviour
     [SerializeField] private TextMesh boomText;
     [SerializeField] private Sprite boomSprite;
     [SerializeField] private Sprite hexSprite;
+    [SerializeField] private Transform hexTransform;
 
     [Header("Status")]
     public bool isPooled = false;
     public bool isBoom = false;
+    public GameObject hexPrefab;
 
     public void SetBoomText(int i)
     {
         boomText.text = i + "";
-    }
-
-    public void StartParticle()
-    {
-
-    }
-
-    public void PlayBoomAnim()
-    {
-        
     }
 
     public void ChangeToBoom(bool boom)
@@ -48,7 +39,6 @@ public class Hex : MonoBehaviour
     public void ChangeType(int type)
     {
         hexType = type;
-
         spriteRenderer.color = board.colors[type];
     }
 
@@ -64,6 +54,30 @@ public class Hex : MonoBehaviour
         }
     }
 
+    public void Start()
+    {
+        board = Board.instance;
+
+        board.SetHex(this);
+
+        hexType = Random.Range(0, board.hexTypeNumber);
+        ChangeType(hexType);
+    }
+
+    public void PlaceAt(int x,int y)
+    {
+        board.hexs[x, y] = this;
+        xIndex = x;
+        yIndex = y;
+
+        float yPosition = y;
+        if (x % 2 == 0)
+        {
+            yPosition = y + 0.5f;
+        }
+
+        hexTransform.position = new Vector3(x, yPosition, 0);
+    }
 
     public void MoveTo(int x, int y)
     {
@@ -73,6 +87,7 @@ public class Hex : MonoBehaviour
         {
             yPosition = y + 0.5f;
         }
+
         StartCoroutine(MoveObjectTo(x,yPosition, y));
     }
     public void MoveTo(Vector2 vector2)
