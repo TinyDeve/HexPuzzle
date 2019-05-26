@@ -17,7 +17,7 @@ public class UIManager : MonoBehaviour
 
     public void StartGame()
     {
-        gameManager.gameMode = GameManager.GameMode.Play;
+        gameManager.StartStopGameMode(true);
         startUI.SetActive(false);
         gameUI.SetActive(true);
     }

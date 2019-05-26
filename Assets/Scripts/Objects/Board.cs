@@ -1,17 +1,29 @@
-using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 
-public class Board : MonoBehaviour
+public sealed class Board : MonoBehaviour
 {
+    public static Board instance;
+
+    public void Awake()
+    {
+        if (instance == null)
+            instance = this;
+    }
+
+
     [Header("References")]
     [SerializeField] private GameObject hexPrefab;
     [SerializeField] private GameManager gm;
 
     [HideInInspector]
     public Hex[,] hexs;
+    [HideInInspector]
+    public int fillX = 0;
+    [HideInInspector]
+    public int fillY = 0;
 
     [Header("Properties")]
     public float gameSpeed;
@@ -21,11 +33,10 @@ public class Board : MonoBehaviour
     public Color[] colors;
 
     //Check the board where you left
-    private bool checkedBefore;
-    private int lastCheckX;
-    private int lastCheckY;
+    private int lastCheckX = 0;
+    private int lastCheckY = 0;
 
-    private Dictionary<Hex,int> booms = new Dictionary<Hex, int>();
+    private Dictionary<Hex, int> booms = new Dictionary<Hex, int>();
     private List<Hex> disappearedHexs = new List<Hex>();
     private Hex[] sellectHexs = new Hex[3];
     private Vector2[] firstPosition = new Vector2[5];
@@ -36,28 +47,35 @@ public class Board : MonoBehaviour
     private bool turnDirectionClockWise = true;
     private bool isComplete = false;
     private bool placeBoom = false;
-    
+
+    private GameObject hexHolder;
+    private Hex hexObjeHolder;
+
+    private static List<Hex> m_emptyHexList = new List<Hex>() { };
+    private List<Hex> m_allMatches = new List<Hex>();
+    private List<Hex> m_allMatchesAt = new List<Hex>();
+    private int[] m_aroundIntArray = new int[6];
+    private Hex[] m_aroundHexArray = new Hex[6];
+    private List<int> disHexs = new List<int>();
+    private List<Hex> falledHexs = new List<Hex>();
+    private List<Hex> matches = new List<Hex>();
+    private List<int> hexIndexes = new List<int>();
+    private List<int> fallXIndex = new List<int>();
+    private List<Hex> movedHexs = new List<Hex>();
+    private Hex nextBoomHex;
+    private Hex fallHex;
+    private Hex moveHex;
+
     void Start()
     {
         if (hexTypeNumber > colors.Length)
         {
-            Debug.LogWarning("Not enough sprites added at Board script");
+            //Debug.LogWarning("Not enough sprites added at Board script");
             return;
         }
 
         hexs = new Hex[boardWitdh, boardHeigth];
         FillBoard();
-
-
-        /*Used for debug
-        for (int i = 0; i < boardWitdh; i++)
-        {
-            for (int j = 0; j < boardHeigth; j++)
-            {
-
-                AroundDebug(i, j);
-            }
-        }*/
 
     }
 
@@ -67,26 +85,32 @@ public class Board : MonoBehaviour
         {
             for (int j = 0; j < boardHeigth; j++)
             {
-                GameObject hexHolder = Instantiate(hexPrefab, transform) as GameObject;
+                hexHolder = Instantiate(hexPrefab, transform) as GameObject;
 
                 hexHolder.name = "Hex : " + i + "," + j;
-
-                Hex hex = hexHolder.GetComponent<Hex>();
-
-                hex.board = this;
-
-                RandomHexAt(hex);
-
-                PlaceHexAt(i, j, hex);
-
-                //..make it around check for optimization
-                while (CheckMatchesAt(hex).Count > 0)
-                {
-                    RandomHexAt(hex);
-                }
             }
         }
     }
+
+    public void SetHex(Hex hex)
+    {
+        hexs[fillX, fillY] = hex;
+        hex.PlaceAt(fillX, fillY);
+
+        fillX += 1;
+        if (fillX == boardWitdh)
+        {
+            fillY += 1;
+            fillX = 0;
+
+            if (fillY == boardHeigth)
+            {
+                RefillBoard();
+            }
+        }
+    }
+
+
 
     public void RefillBoard()
     {
@@ -96,32 +120,31 @@ public class Board : MonoBehaviour
         {
             for (int j = 0; j < boardHeigth; j++)
             {
-                Hex hex = hexs[i, j];
-                if (hex == null)
+                hexObjeHolder = hexs[i, j];
+                if (hexObjeHolder == null)
                 {
                     continue;
                 }
-                hex.board = this;
 
-                RandomHexAt(hex);
-
+                RandomHexAt(hexObjeHolder);
 
                 //..make it around check for optimization
-                while (CheckMatchesAt(hex).Count > 0)
+                while (IsAnyMatchAtFill(i, j, hexObjeHolder.hexType))
                 {
-                    RandomHexAt(hex);
+                    RandomHexAt(hexObjeHolder);
                 }
             }
         }
     }
 
-    void RandomHexAt(Hex hex)
+    private void RandomHexAt(Hex hex)
     {
-        int hexType = UnityEngine.Random.Range(0, hexTypeNumber);
+        int hexType = Random.Range(0, hexTypeNumber);
         hex.ChangeType(hexType);
     }
 
-    void PlaceHexAt(int x, int y, Hex hex)
+    /*Function moved to hex obje to remove transform call and garbage creation due to hex variable
+    private void PlaceHexAt(int x, int y, Hex hex)
     {
         hex.xIndex = x;
         hex.yIndex = y;
@@ -138,25 +161,18 @@ public class Board : MonoBehaviour
 
         hex.transform.position = new Vector3(x, yPosition, 0);
 
-    }
+    }*/
 
     private void TurnFinished()
     {
-        Debug.Log("TurnFinished");
+        //Debug.Log("TurnFinished");
         //Check is any boom count is zero
         CheckBoomKill();
 
         //Check is any more move remain
         CheckMoveKill();
 
-
-        //Everthing is good start game
-        if (gm.gameMode == GameManager.GameMode.Moving)
-        {
-            gm.gameMode = GameManager.GameMode.Play;
-        }
-
-
+        gm.PlayMoveGameMode(true);
     }
 
     #region HandleBooms
@@ -193,7 +209,7 @@ public class Board : MonoBehaviour
 
         if (killGame)
         {
-            Debug.Log("CheckBoomKill");
+            //Debug.Log("CheckBoomKill");
             gm.GameLossed();
             return;
         }
@@ -214,7 +230,6 @@ public class Board : MonoBehaviour
 
     #endregion
 
-
     #region CheckLoss
 
     private void CheckMoveKill()
@@ -226,7 +241,6 @@ public class Board : MonoBehaviour
         }
         else
         {
-            Debug.Log("CheckMoveKill");
             gm.GameLossed();
             return;
         }
@@ -234,15 +248,20 @@ public class Board : MonoBehaviour
 
     private bool CheckForMove()
     {
-        //Check forward from last index
-        for(int i = 0; i < boardHeigth; i++)
+        if (CheckMoveAtIndexs(lastCheckX, lastCheckY))
         {
-            for (int j = 0;j< boardWitdh; j++)
+            return true;
+        }
+
+        //Check forward from last index
+        for (int i = 0; i < boardHeigth; i++)
+        {
+            for (int j = 0; j < boardWitdh; j++)
             {
                 if (CheckMoveAtIndexs(i, j))
                 {
-                    lastCheckX = i;
-                    lastCheckY = j;
+                    lastCheckX = j;
+                    lastCheckY = i;
                     return true;
                 }
             }
@@ -266,18 +285,19 @@ public class Board : MonoBehaviour
         return false;
     }
 
-    private bool CheckMoveAtIndexs(int x,int y)
+    private bool CheckMoveAtIndexs(int x, int y)
     {
-        Hex[] around = GetAround(x, y);
-        
-        return CheckMoveFromAround(around);
+        GetAround(x, y,m_aroundHexArray);
+
+        return CheckMoveFromAround(m_aroundHexArray);
     }
 
-    public void AroundDebug(int x,int y)
+    public void AroundDebug(int x, int y)
     {
-        if (CheckMoveFromAround(GetAround(x, y)))
+        GetAround(x, y, m_aroundHexArray);
+        if (CheckMoveFromAround(m_aroundHexArray))
         {
-            foreach (Hex hex in GetAround(x, y))
+            foreach (Hex hex in m_aroundHexArray)
             {
                 if (hex == null) continue;
                 hex.transform.localScale = new Vector3(0.5f, 0.5f);
@@ -285,32 +305,29 @@ public class Board : MonoBehaviour
         }
     }
 
-    private Hex[] GetAround(int x,int y)
+    private void GetAround(int x, int y, Hex[] hexArray)
     {
-        Hex[] around = new Hex[6];
 
-        around[0] = GetHexSave(x , y + 1);
-        around[3] = GetHexSave(x , y - 1);
+        hexArray[0] = GetHexSave(x , y + 1);
+        hexArray[3] = GetHexSave(x , y - 1);
 
         if(x%2 == 0)
         {
-            around[2] = GetHexSave(x + 1, y);
-            around[4] = GetHexSave(x - 1, y);
+            hexArray[2] = GetHexSave(x + 1, y);
+            hexArray[4] = GetHexSave(x - 1, y);
 
-            around[1] = GetHexSave(x + 1, y + 1);
-            around[5] = GetHexSave(x - 1, y + 1);
+            hexArray[1] = GetHexSave(x + 1, y + 1);
+            hexArray[5] = GetHexSave(x - 1, y + 1);
         }
         else
         {
-            around[1] = GetHexSave(x + 1, y);
-            around[5] = GetHexSave(x - 1, y);
+            hexArray[1] = GetHexSave(x + 1, y);
+            hexArray[5] = GetHexSave(x - 1, y);
 
 
-            around[2] = GetHexSave(x + 1, y - 1);
-            around[4] = GetHexSave(x - 1, y - 1);
+            hexArray[2] = GetHexSave(x + 1, y - 1);
+            hexArray[4] = GetHexSave(x - 1, y - 1);
         }
-
-        return around;
     }
 
     private Hex GetHexSave(int x,int y)
@@ -324,62 +341,24 @@ public class Board : MonoBehaviour
 
     private bool CheckMoveFromAround(Hex[] around)
     {
-        int[] aroundArray = GetArrayFromAround(around);
-        return CheckMoveFromArray(aroundArray);
-
-        /*int lastHexType = -1;
-        if (around[5] != null)
-        {
-            lastHexType = around[5].hexType;
-        }
-        
-
-        for(int i = 0; i < 6; i++)
-        {
-            if (around[i] == null)
-            {
-                //No hex at location so assing a noHexType value
-                lastHexType = -1;
-                continue;
-            }
-            if (lastHexType == around[i].hexType)
-            {
-                int sameHexNumber = 0;
-                foreach(Hex hex in around)
-                {
-                    if (hex.hexType == lastHexType)
-                    {
-                        sameHexNumber += 1;
-                    }
-                }
-                if (sameHexNumber >= 3)
-                {
-                    return true;
-                }
-
-            }
-            lastHexType = around[i].hexType;
-        }
-        return false;*/
+        GetArrayFromAround(around,m_aroundIntArray);
+        return CheckMoveFromArray(m_aroundIntArray);
     }
 
-    private int[] GetArrayFromAround(Hex[] around)
+    private void GetArrayFromAround(Hex[] around,int[] aroundInt)
     {
-        int[] aroundArray = new int[6];
-
         for (int i = 0; i < 6; i++)
         {
             Hex hex = around[i];
             
             if(hex == null)
             {
-                aroundArray[i] = -1;
+                aroundInt[i] = -1;
                 continue;
             }
-            aroundArray[i] = hex.hexType;
+            aroundInt[i] = hex.hexType;
 
         }
-        return aroundArray;
     }
 
     private bool CheckMoveFromArray(int[] aroundArray)
@@ -416,7 +395,7 @@ public class Board : MonoBehaviour
         return false;
     }
 
-#endregion
+    #endregion
 
     #region Move Hexs
     public void SellectHexsStartTurn(int i,int y,bool direction)
@@ -446,32 +425,13 @@ public class Board : MonoBehaviour
         }
 
 
-        /*For turn debug at the end
-        sellectHexs[0].ChangeToBoom(true);
-        sellectHexs[1].ChangeToBoom(true);
-        sellectHexs[2].ChangeToBoom(true);
-
-        sellectHexs[0].SetBoomText(0);
-        sellectHexs[1].SetBoomText(1);
-        sellectHexs[2].SetBoomText(2);*/
-
-
         for (int j = 0; j < 3; j++)
         {
             firstPosition[j] = new Vector2(sellectHexs[j].xIndex,sellectHexs[j].yIndex);
         }
-
-        /*
-        foreach (Hex hex in sellectHexs){
-        Debug.Log("Sellect :"+hex.name);
-            hex.transform.localScale = new Vector2(1.5f, 1.5f);
-        }*/
-
         turnTime = 0;
 
         StartCoroutine(TurnAndCheckMatches());
-
-        //CheckAllMatches(sellectHexs[0], sellectHexs[1], sellectHexs[2]);
     }
 
     private void TurnSellectedHexs()
@@ -497,14 +457,8 @@ public class Board : MonoBehaviour
         
         if (turnTime == 3)
         {
-            if (gm.gameMode == GameManager.GameMode.Moving)
-            {
-                gm.gameMode = GameManager.GameMode.Play;
-                
-                //No Change
-                
-                gm.NoMatched();
-            }
+            gm.PlayMoveGameMode(true);
+            gm.NoMatched();
         }
         else
         {
@@ -513,222 +467,94 @@ public class Board : MonoBehaviour
     }
     #endregion
 
-
     #region Check Matches
-    private bool IsSameHexAt(int x,int y,int hexType)
+    private bool IsAnyMatchAtFill(int x,int y,int hexType)
     {
-        return IsInBoard(x, y) && IsExit(x,y) && hexs[x, y].hexType == hexType;
+        GetAround(x, y, m_aroundHexArray);
+        GetArrayFromAround(m_aroundHexArray, m_aroundIntArray);
+
+        int matchCount = 0;
+
+        int hexTypeAtBack = m_aroundIntArray[5];
+        int hexTypeAtFront = -1;
+        int checkHexType = -1;
+
+        for (int i = 0; i < 6; i++)
+        {
+            checkHexType = m_aroundIntArray[i];
+            hexTypeAtFront = m_aroundIntArray[(i + 1) % 6];
+            //if checkType is null continue
+            if (checkHexType == -1)
+            {
+                hexTypeAtBack = -1;
+                continue;
+            }
+            //if center hex and around is same type look back for third hex piece
+            if (hexType == checkHexType && (hexType == hexTypeAtBack || hexType == hexTypeAtFront))
+            {
+                matchCount += 1;
+            }
+            hexTypeAtBack = checkHexType;
+        }
+
+        if (matchCount >= (smallestMatchNumber - 1))
+        {
+            return true;
+        }
+
+        return false;
     }
-
-    private bool IsExit(int x,int y)
+    private List<Hex> CheckMatchesAroundAt(Hex hex)
     {
-        return hexs[x, y];
-    }
+        GetAround(hex.xIndex, hex.yIndex, m_aroundHexArray);
+        GetArrayFromAround(m_aroundHexArray, m_aroundIntArray);
 
-    List<Hex> LookForUpDownGroupMatches(Hex hex,int upDown)
-    {
-        List<Hex> matchedHexs = new List<Hex>();
+        m_allMatchesAt.Clear();
 
-        int xIndex = hex.xIndex;
-        int yIndex = hex.yIndex + upDown;
+        int hexTypeAtBack = m_aroundIntArray[5];
         int hexType = hex.hexType;
-        
-        //Look up or down for matches
-        if (IsSameHexAt(xIndex,yIndex,hexType))
+        int hexTypeAtFront = -1;
+        int checkHexType = -1;
+
+        for (int i = 0; i < 6; i++)
         {
-            matchedHexs.Add(hexs[xIndex, yIndex]);
-
-            int leftRigthYIndex = yIndex;
-
-            if (xIndex % 2 != 0 && upDown == +1)
+            checkHexType = m_aroundIntArray[i];
+            hexTypeAtFront = m_aroundIntArray[(i+1)%6];
+            //if checkType is null continue
+            if (checkHexType == -1)
             {
-                leftRigthYIndex -= 1;
+                hexTypeAtBack = -1;
+                continue;
             }
-
-            if(xIndex % 2 == 0 && upDown == -1)
+            //if center hex and around is same type look back for third hex piece
+            if (hexType == checkHexType && (hexType == hexTypeAtBack || hexType == hexTypeAtFront))
             {
-                leftRigthYIndex += 1;
+                m_allMatchesAt.Add(m_aroundHexArray[i]);
             }
-
-            //Look at left to complete 3
-            xIndex -= 1;
-            if(IsSameHexAt(xIndex, leftRigthYIndex,hexType))
-            {
-                matchedHexs.Add(hexs[xIndex, leftRigthYIndex]);
-            }
-
-            //Look at rigth to complete 3
-            xIndex += 2;
-            if (IsSameHexAt(xIndex, leftRigthYIndex, hexType))
-            {
-                matchedHexs.Add(hexs[xIndex, leftRigthYIndex]);
-            }
-
+            hexTypeAtBack = checkHexType;
         }
 
-        return matchedHexs;
-
-    }
-
-    List<Hex> LookForLeftRigthGroupMatches(Hex hex, int leftRigth)
-    {
-        List<Hex> matchedHexs = new List<Hex>();
-
-        int xIndex = hex.xIndex + leftRigth;
-        int yIndex = hex.yIndex;
-        int hexType = hex.hexType;
-
-        //Look up or down for matches
-        if (IsSameHexAt(xIndex, yIndex, hexType))
+        if(m_allMatchesAt.Count >= (smallestMatchNumber - 1))
         {
-            matchedHexs.Add(hexs[xIndex, yIndex]);
-
-            int leftRigthYIndex = yIndex;
-
-            if(xIndex % 2 != 0)
-            {
-                leftRigthYIndex += 1;
-            }
-            else
-            {
-                leftRigthYIndex -= 1;
-            }
-
-            //Look at left to complete 3
-            if (IsSameHexAt(xIndex, leftRigthYIndex, hexType))
-            {
-                matchedHexs.Add(hexs[xIndex, leftRigthYIndex]);
-            }
-
-            //Look at rigth to complete 3
-            if (IsSameHexAt(xIndex, leftRigthYIndex, hexType))
-            {
-                matchedHexs.Add(hexs[xIndex, leftRigthYIndex]);
-            }
-
+            m_allMatchesAt.Add(hex);
+            return m_allMatchesAt;
         }
-
-        return matchedHexs;
-
-    }
-
-    List<Hex> CheckMatchesVertical(Hex hex)
-    {
-
-        List<Hex> upMatches = LookForUpDownGroupMatches(hex, 1);
-        List<Hex> downMatches = LookForUpDownGroupMatches(hex, -1);
-
-        List<Hex> allMatches = new List<Hex>();
-
-        if (upMatches != null)
-        {
-            if (upMatches.Count >= (smallestMatchNumber - 1))
-            {
-                allMatches = CombineLinks(allMatches, upMatches);
-            }
-        }
-
-
-        if (downMatches != null)
-        {
-            if (downMatches.Count >= (smallestMatchNumber - 1))
-            {
-                allMatches = CombineLinks(allMatches, downMatches);
-            }
-        }
-
-
-        if (allMatches.Count >= (smallestMatchNumber - 1))
-        {
-            return allMatches;
-        }
-
-        return new List<Hex>();
+        m_allMatchesAt.Clear();
+        return m_allMatchesAt;
     }
 
 
-    List<Hex> CheckMatchesHorizontal(Hex hex)
+    private void CheckAllMatches(Hex hex1, Hex hex2 ,Hex hex3)
     {
+        m_allMatches.Clear();
+        m_allMatches = CombineLinks(m_allMatches, CheckMatchesAroundAt(hex1));
+        m_allMatches = CombineLinks(m_allMatches, CheckMatchesAroundAt(hex2));
+        m_allMatches = CombineLinks(m_allMatches, CheckMatchesAroundAt(hex3));
 
-        List<Hex> upMatches = LookForLeftRigthGroupMatches(hex, 1);
-        List<Hex> downMatches = LookForLeftRigthGroupMatches(hex, -1);
-
-        List<Hex> allMatches = new List<Hex>();
-
-        if (upMatches != null)
-        {
-            if (upMatches.Count >= (smallestMatchNumber - 1))
-            {
-                allMatches = CombineLinks(allMatches, upMatches);
-            }
-        }
-
-
-        if (downMatches != null)
-        {
-            if (downMatches.Count >= (smallestMatchNumber - 1))
-            {
-                allMatches = CombineLinks(allMatches, downMatches);
-            }
-        }
-
-
-        if (allMatches.Count >= (smallestMatchNumber - 1))
-        {
-            return allMatches;
-        }
-
-        return new List<Hex>();
-    }
-
-
-    List<Hex> CheckMatchesAt(Hex hex)
-    {
-
-        List<Hex> upMatches = CheckMatchesVertical(hex);
-        List<Hex> downMatches = CheckMatchesHorizontal(hex);
-
-        List<Hex> allMatches = new List<Hex>();
-
-        if (upMatches != null)
-        {
-            if (upMatches.Count >= (smallestMatchNumber - 1))
-            {
-                allMatches = CombineLinks(allMatches, upMatches);
-            }
-        }
-
-
-        if (downMatches != null)
-        {
-            if (downMatches.Count >= (smallestMatchNumber - 1))
-            {
-                allMatches = CombineLinks(allMatches, downMatches);
-            }
-        }
-
-
-        allMatches.Add(hex);
-        if (allMatches.Count > (smallestMatchNumber - 1))
-        {
-            return allMatches;
-        }
-
-        return new List<Hex>();
-    }
-
-    void CheckAllMatches(Hex hex1, Hex hex2 ,Hex hex3)
-    {
-        List<Hex> allMatches = new List<Hex>();
-
-        allMatches = CombineLinks(CheckMatchesAt(hex1), CheckMatchesAt(hex2));
-        allMatches = CombineLinks(allMatches, CheckMatchesAt(hex3));
-        //Debug.Log("" + allMatches.Count);
-
-        if (allMatches.Count > (smallestMatchNumber - 1))
+        if (m_allMatches.Count > (smallestMatchNumber - 1))
         {
             //Debug.Log("Count Chaeck Matches");
-            DisAppearFallAllCascade(allMatches);
+            DisAppearFallAllCascade(m_allMatches);
         }
         else
         {
@@ -740,12 +566,12 @@ public class Board : MonoBehaviour
     #endregion
 
     #region Fall Disappear Cascade
-    void DisAppearFallAllCascade(List<Hex> allMatches)
+    private void DisAppearFallAllCascade(List<Hex> allMatches)
     {
         StartCoroutine(DisAppearFallCascadeToutine(allMatches));
     }
 
-    IEnumerator DisAppearFallCascadeToutine(List<Hex> allMatches)
+    private IEnumerator DisAppearFallCascadeToutine(List<Hex> allMatches)
     {
         //Debug.Log("Count Disappear Matches");
 
@@ -756,18 +582,15 @@ public class Board : MonoBehaviour
 
         StartCoroutine(Cascade());
 
-        disappearedHexs = new List<Hex>();
-
         yield return null;
     }
 
-    IEnumerator DisappearFall(List<Hex> allMatches)
+    private IEnumerator DisappearFall(List<Hex> allMatches)
     {
-        List<int> disHexs = new List<int>(); ;
-        List<Hex> falledHexs = new List<Hex>();
-        List<Hex> matches = new List<Hex>();
+        disHexs.Clear();
+        falledHexs.Clear();
 
-        Debug.Log("All matches count :" + allMatches.Count);
+        //Debug.Log("All matches count :" + allMatches.Count);
         yield return new WaitForSeconds(gameSpeed / 2);
 
         isComplete = false;
@@ -782,18 +605,18 @@ public class Board : MonoBehaviour
             //Fall coloumn that hex disappeared
             falledHexs = FallHexs(disHexs);
 
-            Debug.Log("Wait for " + (maxFallDistance * gameSpeed) + "seconds for " + falledHexs.Count + " fall hexs");
+            //Debug.Log("Wait for " + (maxFallDistance * gameSpeed) + "seconds for " + falledHexs.Count + " fall hexs");
             //Make combo count there
             comboTimes += 1;
             yield return new WaitForSeconds((maxFallDistance + 1) * gameSpeed);
 
             maxFallDistance = 0;
 
-            matches = new List<Hex>();
+            matches.Clear();
 
             foreach (Hex fallHex in falledHexs)
             {
-                matches = CombineLinks(matches, CheckMatchesAt(fallHex));
+                matches = CombineLinks(matches, CheckMatchesAroundAt(fallHex));
             }
 
             //Debug.Log("Combo : " + comboTimes + " Match count :" + matches.Count);
@@ -814,19 +637,19 @@ public class Board : MonoBehaviour
     }
 
 
-    IEnumerator Cascade()
+    private IEnumerator Cascade()
     {
-        List<int> hexIndexes = new List<int>();
+        hexIndexes.Clear();
         float timeToFinish = 0.0f;
         if (placeBoom)
         {
             int i = UnityEngine.Random.Range(0, disappearedHexs.Count);
-            Hex hex = disappearedHexs[i];
-            if (!booms.ContainsKey(hex))
+            nextBoomHex = disappearedHexs[i];
+            if (!booms.ContainsKey(nextBoomHex))
             {
-                hex.ChangeToBoom(true);
-                hex.SetBoomText(5);
-                booms.Add(hex, 5);
+                nextBoomHex.ChangeToBoom(true);
+                nextBoomHex.SetBoomText(5);
+                booms.Add(nextBoomHex, 5);
                 placeBoom = false;
             }
         }
@@ -855,33 +678,31 @@ public class Board : MonoBehaviour
                 wait += 1;
                 hexCount += 1;
 
-                Hex hex = disappearedHexs[hexCount - 1];
+                fallHex = disappearedHexs[hexCount - 1];
 
                 //reswap object out of border
                 int index = 0;
 
                 //Debug.Log("Cascade at : " + i +" Wait : "+wait +" Hex Count : " + (hexCount-1));
 
-
-                PlaceHexAt(i, j, hex);
-                hex.transform.position = new Vector3(i, j, 0);
+                fallHex.PlaceAt(i, j);
 
                 do
                 {
                     //..make it directinal for optimization
-                    RandomHexAt(hex);
+                    RandomHexAt(fallHex);
                     index += 1;
                     if (index > 1001)
                     {
                         //Debug.LogWarning("Infinte Loop");
                         break;
                     }
-                } while (CheckMatchesAt(hex).Count > 0);
+                } while (IsAnyMatchAtFill(fallHex.xIndex, fallHex.yIndex, fallHex.hexType));
 
-                hex.ChangePool(false);
+                fallHex.ChangePool(false);
 
                 //fall to null point
-                hex.Cascade(j, wait - 1);
+                fallHex.Cascade(j, wait - 1);
                 if(wait > timeToFinish)
                 {
                     timeToFinish = wait;
@@ -889,12 +710,16 @@ public class Board : MonoBehaviour
             }
         }
         yield return new WaitForSeconds(timeToFinish* gameSpeed);
+
+
+        disappearedHexs.Clear();
+
         TurnFinished();
     }
 
-    List<int> DisAppearHexs(List<Hex> allMatches)
+    private List<int> DisAppearHexs(List<Hex> allMatches)
     {
-        List<int> fallXIndex = new List<int>();
+        fallXIndex.Clear();
 
         foreach (Hex hex in allMatches)
         {
@@ -926,19 +751,18 @@ public class Board : MonoBehaviour
     }
 
 
-    List<Hex> FallHexs(List<int> fallColumn)
+    private List<Hex> FallHexs(List<int> fallColumn)
     {
-        List<Hex> movedHexs = new List<Hex>();
+        movedHexs.Clear();
         foreach (int fll in fallColumn)
         {
-            movedHexs = CombineLinks(movedHexs, FallColumn(fll));
+            FallColumn(fll);
         }
         return movedHexs;
     }
 
-    List<Hex> FallColumn(int x)
+    private List<Hex> FallColumn(int x)
     {
-        List<Hex> movedHexs = new List<Hex>();
         for (int y = 0; y < boardHeigth - 1; y++)
         {
             if (hexs[x, y] == null)
@@ -948,7 +772,7 @@ public class Board : MonoBehaviour
                 {
                     if (hexs[x, i] != null)
                     {
-                        Hex moveHex = hexs[x, i];
+                        moveHex = hexs[x, i];
                         movedHexs.Add(moveHex);
 
                         moveHex.Fall(y);
@@ -966,9 +790,9 @@ public class Board : MonoBehaviour
 
     #endregion
 
-    bool IsInBoard(int x, int y)
+    private bool IsInBoard(int x, int y)
     {
-        if (x < 0 || x > boardWitdh - 1 || y < 0 || y > boardHeigth - 1)
+        if (x < 0 || y < 0 || x > boardWitdh - 1  || y > boardHeigth - 1)
         {
             //Debug.Log("Out Of Border");
             return false;
@@ -976,51 +800,13 @@ public class Board : MonoBehaviour
         return true;
     }
 
-    List<Hex> CombineLinks(List<Hex> list1, List<Hex> list2)
+    private List<Hex> CombineLinks(List<Hex> list1, List<Hex> list2)
     {
-        if (list1 == null && list2 == null)
+        foreach (Hex hex in list2)
         {
-            return new List<Hex>();
-        }
-        else if (list1 == null)
-        {
-            return list2;
-        }
-        else if (list2 == null)
-        {
-            return list1;
-        }
-
-        foreach (Hex hex in list1)
-        {
-            if (!list2.Contains(hex))
+            if (!list1.Contains(hex))
             {
-                list2.Add(hex);
-            }
-        }
-
-        return list2;
-    }
-    List<int> CombineLinks(List<int> list1, List<int> list2)
-    {
-        if (list1 == null && list2 == null)
-        {
-            return new List<int>();
-        }
-        else if (list1 == null)
-        {
-            return list2;
-        }
-        else if (list2 == null)
-        {
-            return list1;
-        }
-
-        foreach (int xIndex in list2)
-        {
-            if (!list1.Contains(xIndex))
-            {
-                list1.Add(xIndex);
+                list1.Add(hex);
             }
         }
 

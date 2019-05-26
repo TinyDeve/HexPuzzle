@@ -741,9 +741,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2a2a8e2dd45c6ff45870e919031e479b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  gm: {fileID: 1401204240}
+  noInput: 0
   m_minSwipeDistance: 50
-  m_useDiagnostic: 0
 --- !u!114 &1401204240
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -757,16 +756,16 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   gameMode: 0
-  board: {fileID: 1587387928}
+  m_board: {fileID: 1587387928}
   uIManager: {fileID: 1401204242}
+  m_inputManager: {fileID: 1401204239}
   mainCamera: {fileID: 857463187}
   sellectHolder: {fileID: 835547638473007441}
   scoreText: {fileID: 1331442223}
   m_minTurnAngle: 15
-  xMarginPercentage: 10
+  m_xMarginPercentage: 0
   yMarginPercentage: 20
-  tileMarginPercentage: 0
-  boomAtScore: 1000
+  boomAtScore: 400
 --- !u!4 &1401204241
 Transform:
   m_ObjectHideFlags: 0
@@ -961,6 +960,8 @@ MonoBehaviour:
   hexPrefab: {fileID: 8365784821786736979, guid: e790e79804b0c3b49bbe211f8e2f7097,
     type: 3}
   gm: {fileID: 1401204240}
+  fillX: 0
+  fillY: 0
   gameSpeed: 0.2
   boardHeigth: 9
   boardWitdh: 8

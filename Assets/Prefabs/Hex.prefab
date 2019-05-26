@@ -193,5 +193,6 @@ MonoBehaviour:
   boomText: {fileID: 2355748922522533019}
   boomSprite: {fileID: 21300000, guid: b57972394e3847245965ff495f9073d4, type: 3}
   hexSprite: {fileID: 21300000, guid: 0ef073e7d2d664a468d4b055ae949ac5, type: 3}
+  hexTransform: {fileID: 342950036370883488}
   isPooled: 0
   isBoom: 0

@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class InputManager : MonoBehaviour {
@@ -10,60 +8,64 @@ public class InputManager : MonoBehaviour {
     public static event SwipeEventHandler SwipeEvent;
     public static event TouchEventHandler TapEvent;
 
-    public GameManager gm;
-
-    Vector2 m_touchMovement;
-    Vector2 m_touchPosition;
+    [HideInInspector]
+    public bool noInput;
 
     [Range(0, 250)]
-    public int m_minSwipeDistance = 50;
+    [SerializeField] private int m_minSwipeDistance = 50;
 
-    public bool m_useDiagnostic = false;
-    
+
+    private bool m_useDiagnostic = false;
+
+    private Vector2 m_touchMovement;
+    private Vector2 m_touchStartPosition;
+    private Vector2 m_touchEndPosition;
+
+    private Touch touch;
+
+
+
     void OnSwipeEnd()
     {
-        if (SwipeEvent != null)
-        {
-            SwipeEvent(m_touchPosition,m_touchMovement+m_touchPosition);
-        }
+        SwipeEvent?.Invoke(m_touchStartPosition, m_touchEndPosition);
     }
     void OnTap()
     {
-        if(TapEvent != null)
-        {
-            TapEvent(m_touchPosition);
-        }
+        TapEvent?.Invoke(m_touchStartPosition);
     }
-    
-    void Update()
+
+    private void Start()
     {
-        if(gm.gameMode != GameManager.GameMode.Play)
+        m_minSwipeDistance *= m_minSwipeDistance;
+        noInput = true;
+    }
+
+    private void Update()
+    {
+        if(noInput)//Changed to not get data from manager but assigned by manager when game mode changed
         {
             return;
         }
         if (Input.touchCount > 0)
         {
-            Touch touch = Input.touches[0];
+            touch = Input.GetTouch(0);//Changed because Input.touches create an array every frame then array become garbage
             if (touch.phase == TouchPhase.Began)
             {
-                m_touchPosition = touch.position;
+                m_touchStartPosition = touch.position;
                 m_touchMovement = Vector2.zero;
-            }
-            else if (touch.phase == TouchPhase.Moved || touch.phase == TouchPhase.Stationary)
-            {
-                m_touchMovement += touch.deltaPosition;
             }
             else if (touch.phase == TouchPhase.Ended)
             {
-                if (m_touchMovement.magnitude > m_minSwipeDistance)
+                m_touchEndPosition = touch.position;
+                m_touchMovement = m_touchEndPosition-m_touchStartPosition;
+                if (m_touchMovement.sqrMagnitude > m_minSwipeDistance)//sqrMagnitude is les expensive function
                 {
+                    m_touchEndPosition = touch.position;
                     OnSwipeEnd();
-                    Diagnostic("Swipe detected", m_touchMovement.ToString() + " " + SwipeDiagnostic(m_touchMovement));
                 }
                 else
                 {
                     OnTap();
-                    Diagnostic("Tap detected", m_touchPosition.ToString());
 
                 }
             }
